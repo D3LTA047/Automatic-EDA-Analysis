@@ -1,66 +1,96 @@
 import streamlit as st
+import pandas as pd
+import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from eda_tool.data_loader import load_data
-from eda_tool.eda_summary import dataset_summary
-from eda_tool.missing_values import plot_missing_values
-from eda_tool.visualization import (
-    plot_histograms, plot_correlation_matrix, plot_countplots, 
-    plot_boxplots, plot_violinplots, plot_pairplot, plot_kde
-)
+import plotly.express as px
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 
-st.title("Automatic EDA Tool")
+def load_data(uploaded_file):
+    """Loads dataset from an uploaded CSV file."""
+    try:
+        df = pd.read_csv(uploaded_file)
+        return df
+    except Exception as e:
+        st.error(f"Error loading dataset: {e}")
+        return None
 
-uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+def handle_missing_values(df):
+    """Handles missing values by filling with the median or mode."""
+    for column in df.columns:
+        if df[column].dtype == 'object':
+            df[column].fillna(df[column].mode()[0], inplace=True)
+        else:
+            df[column].fillna(df[column].median(), inplace=True)
+    return df
 
-if uploaded_file:
-    df = load_data(uploaded_file)
+def categorical_data_analysis(df):
+    """Analyzes categorical data by showing unique values and frequencies."""
+    categorical_cols = df.select_dtypes(include=['object']).columns
+    for col in categorical_cols:
+        st.write(f"**{col}**: {df[col].nunique()} unique values")
+        st.write(df[col].value_counts())
+
+def feature_engineering(df):
+    """Encodes categorical features and scales numerical data."""
+    le = LabelEncoder()
+    scaler = StandardScaler()
     
-    if df is not None:
-        st.subheader("Click Below to Explore the Dataset")
+    for column in df.select_dtypes(include=['object']).columns:
+        df[column] = le.fit_transform(df[column])
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    df[numeric_cols] = scaler.fit_transform(df[numeric_cols])
+    return df
 
-        with st.expander("Show Dataset Shape"):
-            st.write(f"Shape: {df.shape}")
+def plot_correlation_matrix(df):
+    """Displays the correlation matrix."""
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(df.corr(), annot=True, cmap='coolwarm', fmt='.2f', ax=ax)
+    st.pyplot(fig)
 
-        with st.expander("Show Column Names"):
-            st.write(f"Columns: {list(df.columns)}")
+def export_summary(df):
+    """Exports a summary report to a CSV file."""
+    summary = df.describe().T
+    summary.to_csv("eda_summary.csv")
+    df.to_csv("processed_data.csv", index=False)
+    st.success("Summary and processed dataset saved!")
 
-        with st.expander("Show Missing Values"):
-            st.write(df.isnull().sum())
+def main():
+    st.title("Automatic EDA Tool")
 
-        with st.expander("Show Data Types"):
-            st.write(df.dtypes)
+    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
 
-        with st.expander("Show Summary Statistics"):
-            st.write(df.describe())
+    if uploaded_file:
+        df = load_data(uploaded_file)
+        if df is not None:
+            st.subheader("Dataset Overview")
+            st.write(df.head())
 
-        with st.expander("Show Missing Values Heatmap"):
-            st.pyplot(plot_missing_values(df))
+            with st.expander("Categorical Data Analysis"):
+                categorical_data_analysis(df)
 
-        with st.expander("Show Feature Distributions (Histogram)"):
-            st.pyplot(plot_histograms(df))
+            with st.expander("Missing Values Handling"):
+                df = handle_missing_values(df)
+                st.write("Missing values filled.")
+                st.write(df.isnull().sum())
 
-        with st.expander("Show Correlation Matrix"):
-            st.pyplot(plot_correlation_matrix(df))
+            with st.expander("Feature Engineering"):
+                df = feature_engineering(df)
+                st.write("Categorical encoding and scaling applied.")
+                st.write(df.head())
 
-        with st.expander("Show Count Plots for Categorical Features"):
-            for fig in plot_countplots(df):
-                st.pyplot(fig)
+            with st.expander("Correlation Matrix"):
+                plot_correlation_matrix(df)
 
-        with st.expander("Show Box Plots for Outlier Detection"):
-            for fig in plot_boxplots(df):
-                st.pyplot(fig)
+            with st.expander("Interactive Scatter Plot"):
+                numeric_cols = df.select_dtypes(include=[np.number]).columns
+                if len(numeric_cols) >= 2:
+                    fig = px.scatter(df, x=numeric_cols[0], y=numeric_cols[1], title="Scatter Plot")
+                    st.plotly_chart(fig)
 
-        with st.expander("Show Violin Plots"):
-            for fig in plot_violinplots(df):
-                st.pyplot(fig)
+            if st.button("Export Reports"):
+                export_summary(df)
 
-        with st.expander("Show Pair Plot (Feature Relationships)"):
-            st.pyplot(plot_pairplot(df))
-
-        with st.expander("Show KDE (Density) Plots"):
-            for fig in plot_kde(df):
-                st.pyplot(fig)
-
-    else:
-        st.error("Error while loading the dataset.")
+if __name__ == "__main__":
+    main()
